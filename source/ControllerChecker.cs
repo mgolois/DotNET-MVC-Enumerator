@@ -17,9 +17,9 @@ namespace DotNetMVCEnumerator.source
 {
     class ControllerChecker
     {
-        List<String> results = new List<string>();
+        List<string> results = new List<string>();
 
-        public bool inheritsFromController(SyntaxNode root, String args)
+        public bool inheritsFromController(SyntaxNode root, string args)
         {
 
             bool isValid = false;
@@ -38,8 +38,8 @@ namespace DotNetMVCEnumerator.source
         }
 
 
-        public void enumerateEntrypoints(SyntaxNode root, String attributeToSearch, String negativeSearch, 
-            String path, Dictionary<String, List<Result>> resultList)
+        public void enumerateEntrypoints(SyntaxNode root, string attributeToSearch, string negativeSearch,
+            string path, Dictionary<string, List<Result>> resultList)
         {
             try
             {
@@ -61,19 +61,19 @@ namespace DotNetMVCEnumerator.source
                     Result result = new Result();
 
                     // Return all the attributes to list it only in the CSV output
-                    List<String> methodAttributes = CheckAttribute.getMethodAttributes(method, controller);
+                    List<string> methodAttributes = CheckAttribute.getMethodAttributes(method, controller);
                     
                     // Set attributes set at Controller level
                     CheckAttribute.setMethodAttributesFromController(methodAttributes, controllerAttrs);
 
-                    Boolean addAttributeFlag = true;
+                    bool addAttributeFlag = true;
 
-                    if (!String.IsNullOrEmpty(attributeToSearch))
+                    if (!string.IsNullOrEmpty(attributeToSearch))
                     {
-                        String attributeMatched = methodAttributes.FirstOrDefault(s => s.StartsWith(attributeToSearch));
+                        string attributeMatched = methodAttributes.FirstOrDefault(s => s.StartsWith(attributeToSearch));
 
                         // Only add attributes that start with the value 'searched' for - via command line switch
-                        if(String.IsNullOrEmpty(attributeMatched))
+                        if(string.IsNullOrEmpty(attributeMatched))
                         {
                             addAttributeFlag = false;
                         }
@@ -81,11 +81,11 @@ namespace DotNetMVCEnumerator.source
 
 
                     // Only add attributes that are missing the 'negative search' passed via command line switch
-                    if (!String.IsNullOrEmpty(negativeSearch))
+                    if (!string.IsNullOrEmpty(negativeSearch))
                     {
-                        String attributeMatched = methodAttributes.FirstOrDefault(s => s.StartsWith(negativeSearch));
+                        string attributeMatched = methodAttributes.FirstOrDefault(s => s.StartsWith(negativeSearch));
                        
-                        if(!String.IsNullOrEmpty(attributeMatched))
+                        if(!string.IsNullOrEmpty(attributeMatched))
                         {
                             addAttributeFlag = false;
                         }

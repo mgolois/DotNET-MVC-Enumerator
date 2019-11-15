@@ -15,6 +15,12 @@ using Microsoft.CodeAnalysis;
 using Microsoft.CodeAnalysis.CSharp;
 using Microsoft.CodeAnalysis.Text;
 using System.Data;
+using CommandLine;
+using Microsoft.CodeAnalysis.MSBuild;
+using System.Threading.Tasks;
+using Microsoft.Build.Evaluation;
+using Microsoft.Build.Utilities;
+using Microsoft.CodeAnalysis.Host;
 
 namespace DotNetMVCEnumerator
 {
@@ -22,64 +28,67 @@ namespace DotNetMVCEnumerator
     {
         private static void Main(string[] args)
         {
-            string attribute = "";
-            string csvOutputFile = "";
-            string directoryToScan = "";
-            string negativeSearch = "";
-            Dictionary<String, List<Result>> results = new Dictionary<string, List<Result>>();
 
+            var isValid = true;
+            Parser.Default.ParseArguments<Options>(args)
+                .WithParsed(Processor)
+                .WithNotParsed(c=> isValid=false);
+
+            if (!isValid)
+            {
+                Environment.Exit(0);
+            }
+        }
+
+        private static void Processor(Options o)
+        {
             try
             {
-                var options = new Options();
-                bool isFlagValid = options.OptionParser(args, out csvOutputFile, out attribute, out directoryToScan, out negativeSearch);
-                
-                // If Command-line options not set correctly, show default message and exit
-                if (!isFlagValid)
-                {
-                    System.Environment.Exit(0);
-                }
+                var results = new Dictionary<string, List<Result>>();
 
-                if(String.IsNullOrEmpty(csvOutputFile))
+                if (string.IsNullOrEmpty(o.CsvOutput))
                 {
                     DateTime dt = DateTime.Now;
-                    String timestamp = dt.ToString("yyyyMMddHHmmss");
-                    csvOutputFile = "enumerated_controllers_"+timestamp+".csv";
+                    string timestamp = dt.ToString("yyyyMMddHHmmss");
+                    o.CsvOutput = "enumerated_controllers_" + timestamp + ".csv";
                 }
 
-                string curDir = Directory.GetCurrentDirectory();
-                if (String.IsNullOrEmpty(directoryToScan))
-                {
-                    directoryToScan = curDir;
-                }
-                string[] paths = Directory.GetFiles(directoryToScan, "*.cs", SearchOption.AllDirectories);
+                //var documents = LoadSolution(o.SolutionPath);
 
-                if (paths.Length > 0)
+                string[] paths = Directory.GetFiles(o.Directory, "*.cs", SearchOption.AllDirectories);
+
+                if (paths.Any())
                 {
                     foreach (var path in paths)
                     {
                         using (var stream = File.OpenRead(path))
                         {
+
                             var tree = CSharpSyntaxTree.ParseText(SourceText.From(stream), path: path);
                             SyntaxNode root = tree.GetRoot();
 
                             // Check if the Class inherits Apicontroller or Controller and print out all the public entry points
                             ControllerChecker controllerchk = new ControllerChecker();
-                            if (controllerchk.inheritsFromController(root, attribute))
+                            if (controllerchk.inheritsFromController(root, o.AttributeSearch))
                             {
-                                controllerchk.enumerateEntrypoints(root, attribute, negativeSearch, path, results);
+                                controllerchk.enumerateEntrypoints(root, o.AttributeSearch, o.NegativeSearch, path, results);
                             }
                         }
                     }
 
                     string[] controllerPaths = results.Keys.ToArray();
-                    String pathToTrim = getPathToTrim(controllerPaths);
+                    string pathToTrim = getPathToTrim(controllerPaths);
 
-                    if (!String.IsNullOrEmpty(attribute) || !String.IsNullOrEmpty(negativeSearch))
+                    if (!string.IsNullOrEmpty(o.AttributeSearch) || !string.IsNullOrEmpty(o.NegativeSearch))
                     {
                         printCommandLineResults(results, pathToTrim);
                     }
-                   
-                    printCSVResults(results, csvOutputFile, pathToTrim);
+
+                    printCSVResults(results, o.CsvOutput, pathToTrim);
+                }
+                else
+                {
+                    Console.WriteLine("Unable to find any document from solution line");
                 }
             }
             catch (DirectoryNotFoundException)
@@ -104,32 +113,59 @@ namespace DotNetMVCEnumerator
             {
                 Console.WriteLine("Illegal characters passed as arguments! ");
             }
-            catch(Exception)
+            catch (Exception e)
             {
-                Console.WriteLine("Unexpected error");
+                Console.WriteLine($"Unexpected error {e}");
             }
+
+        }
+        public static IEnumerable<Document> LoadSolution(string solutionDir)
+        {
+            var solutionFilePath = Path.GetFullPath(solutionDir);
+
+            MSBuildWorkspace workspace = MSBuildWorkspace.Create(); 
+            workspace.WorkspaceFailed += Workspace_WorkspaceFailed;
+            Solution solution = workspace.OpenSolutionAsync(solutionFilePath).Result;
+
+            var documents = new List<Document>();
+            foreach (var projectId in solution.ProjectIds)
+            {
+                var project = solution.GetProject(projectId);
+                foreach (var documentId in project.DocumentIds)
+                {
+                    Document document = solution.GetDocument(documentId);
+                    if (document.SupportsSyntaxTree) documents.Add(document);
+                }
+            }
+
+            return documents;
         }
 
-        public static void printCommandLineResults(Dictionary<String, List<Result>> results, String pathToTrim)
+        private static void Workspace_WorkspaceFailed(object sender, WorkspaceDiagnosticEventArgs e)
         {
-            foreach( KeyValuePair<String, List<Result>> pair in results)
+            throw new NotImplementedException();
+        }
+
+        public static void printCommandLineResults(Dictionary<string, List<Result>> results, string pathToTrim)
+        {
+            foreach (KeyValuePair<string, List<Result>> pair in results)
             {
                 Console.WriteLine("Controller: \n" + pair.Key.Replace(pathToTrim, ""));
                 Console.WriteLine("\nMethods: ");
-                foreach(Result result in pair.Value)
+                foreach (Result result in pair.Value)
                 {
                     Console.WriteLine(result.MethodName);
                 }
-                    
+
                 Console.WriteLine("\n======================\n");
             }
         }
 
-        public static void printCSVResults(Dictionary<String, List<Result>> results, String filename, String pathToTrim)
+        public static void printCSVResults(Dictionary<string, List<Result>> results, string filename, string pathToTrim)
         {
             var csvExport = new CsvExport();
 
-            foreach (KeyValuePair<String, List<Result>> pair in results)
+            foreach (KeyValuePair<string, List<Result>> pair in results)
             {
                 foreach (Result result in pair.Value)
                 {
@@ -148,14 +184,14 @@ namespace DotNetMVCEnumerator
         }
 
 
-        public static String getPathToTrim(String[] paths)
+        public static string getPathToTrim(string[] paths)
         {
             string pathToTrim = "";
 
             try
             {
-                String aPath = paths.First();
-                
+                string aPath = paths.First();
+
                 string[] dirsInFilePath = aPath.Split('\\');
                 int highestMatchingIndex = 0;
 
@@ -176,7 +212,7 @@ namespace DotNetMVCEnumerator
 
                 if (highestMatchingIndex == 0)
                 {
-                    pathToTrim =  "." + "\\";
+                    pathToTrim = "." + "\\";
                 }
                 else
                 {
@@ -189,19 +225,19 @@ namespace DotNetMVCEnumerator
                 Console.WriteLine("No Entrypoints with the specified search parameters found.");
             }
 
-            catch( Exception e)
+            catch (Exception e)
             {
                 Console.WriteLine(e.ToString());
             }
 
             return pathToTrim;
-           
+
         }
     }
 
-   
+
 }
-    
-    
+
+
 
 
